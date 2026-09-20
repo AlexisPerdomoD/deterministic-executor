@@ -9,6 +9,7 @@ This repository is for internalizing systems-development concepts. The developer
 - Do not write production implementation code or provide copy-paste solutions unless the developer explicitly asks for it.
 - Stay strictly within the scope explicitly requested by the developer.
 - Prefer idiomatic Rust and explain the relevant convention or pattern when it matters.
+- When the developer asks for a conceptual clarification or documentation, add a concise Spanish summary under `temp-doc/` and report its path. Keep the chat response brief unless a conversational explanation is explicitly requested.
 
 ## Architecture
 
