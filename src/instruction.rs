@@ -1,11 +1,21 @@
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Value {
+    Amount(u128),
+    Code(String),
+}
+
 /// An instruction is an operation on the stack.
 /// This is the valid instruction set for the deterministic executor.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Instruction {
-    Push { value: i64 },
+    Push(Value),
     Halt,
+    Load,
+    Transfer,
     Add,
     Sub,
+    Mul,
+    MulPercentage,
 }
 
 /// An error that can occur when validating a program.
@@ -15,6 +25,7 @@ pub enum ProgramError {
     MissingHalt,
     MultipleHalt,
     HaltNotLast,
+    InstructionOutOfBound,
 }
 
 /// A program is a sequence of instructions.
@@ -23,32 +34,43 @@ pub struct Program {
 }
 
 impl Program {
-    /// from_instructions creates a new Program from a sequence of instructions.
+    /// with_instructions creates a new Program from a sequence of instructions.
     /// It validates the instructions before creating the Program. So Valid Program is ensured when this function return Ok.
-    pub fn from_instructions(instructions: Vec<Instruction>) -> Result<Self, ProgramError> {
+    pub fn with_instructions(instructions: Vec<Instruction>) -> Result<Self, ProgramError> {
         let res = Self::new(instructions);
-        match res.validate() {
-            Ok(()) => Ok(res),
-            Err(val) => Err(val),
-        }
+        Program::validate(&res)?;
+        Ok(res)
     }
 
-    /// size returns the number of instructions in the program.
+    /// returns an iterator from program instructions as readonly
+    pub fn iter(&self) -> impl Iterator<Item = &Instruction> {
+        self.instructions.iter()
+    }
+
+    /// returns the readonly instruction based on explicit index
+    pub fn get(&self, idx: usize) -> Option<&Instruction> {
+        self.instructions.get(idx)
+    }
+
     pub fn len(&self) -> usize {
         self.instructions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn new(instructions: Vec<Instruction>) -> Self {
         Self { instructions }
     }
 
-    fn validate(&self) -> Result<(), ProgramError> {
-        if self.instructions.is_empty() {
+    fn validate(inst: &Self) -> Result<(), ProgramError> {
+        if inst.instructions.is_empty() {
             return Err(ProgramError::Empty);
         }
 
         let mut found_halt = false;
-        for inst in self.instructions.iter() {
+        for inst in inst.instructions.iter() {
             if inst != &Instruction::Halt {
                 continue;
             }
@@ -64,7 +86,7 @@ impl Program {
             return Err(ProgramError::MissingHalt);
         }
 
-        if self.instructions.last() != Some(&Instruction::Halt) {
+        if inst.instructions.last() != Some(&Instruction::Halt) {
             return Err(ProgramError::HaltNotLast);
         }
 
@@ -78,10 +100,10 @@ mod tests {
 
     #[test]
     fn validate_accepts_program_that_ends_with_halt() {
-        let program = Program::new(vec![Instruction::Push { value: 7 }, Instruction::Halt]);
+        let program = Program::new(vec![Instruction::Push(Value::Amount(7)), Instruction::Halt]);
 
-        assert!(matches!(program.validate(), Ok(())));
-        assert_eq!(program.len(), 2);
+        assert!(matches!(Program::validate(&program), Ok(())));
+        assert_eq!(program.instructions.len(), 2);
     }
 
     #[test]
@@ -89,7 +111,7 @@ mod tests {
         let program = Program::new(vec![]);
 
         assert!(matches!(
-            program.validate(),
+            Program::validate(&program),
             Err(ProgramError::Empty)
         ));
     }
@@ -99,7 +121,7 @@ mod tests {
         let program = Program::new(vec![Instruction::Add]);
 
         assert!(matches!(
-            program.validate(),
+            Program::validate(&program),
             Err(ProgramError::MissingHalt)
         ));
     }
@@ -109,7 +131,7 @@ mod tests {
         let program = Program::new(vec![Instruction::Halt, Instruction::Halt]);
 
         assert!(matches!(
-            program.validate(),
+            Program::validate(&program),
             Err(ProgramError::MultipleHalt)
         ));
     }
@@ -119,7 +141,7 @@ mod tests {
         let program = Program::new(vec![Instruction::Halt, Instruction::Sub]);
 
         assert!(matches!(
-            program.validate(),
+            Program::validate(&program),
             Err(ProgramError::HaltNotLast)
         ));
     }
