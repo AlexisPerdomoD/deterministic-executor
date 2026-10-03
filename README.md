@@ -16,6 +16,16 @@ This is a systems-development learning project. Its focus is on:
 
 The system is deliberately small so that its behavior, invariants, and costs can be understood precisely.
 
+## Límite de responsabilidad de la VM
+
+La VM ejecuta un programa validado sobre un estado recibido y, si termina correctamente, devuelve el estado resultante. Su responsabilidad es aplicar las transiciones de las instrucciones de forma determinista y mantener sus invariantes locales: límites aritméticos, referencias requeridas y actualización consistente de balances y nonce.
+
+La VM no decide si una operación está autorizada por una política externa. Si no hay `owner_code`, la ejecución puede acreditar valor al receptor como emisión de sistema; la VM no exige ni inventa una cuenta emisora. La legitimidad de esa emisión corresponde al componente que solicita la ejecución.
+
+La autorización, la persistencia del estado y la capa de transporte quedan fuera del motor. No deben atribuirse implícitamente al intérprete ni confundirse con la validez semántica de una transición.
+
+Estas responsabilidades se reflejan en las pruebas: con `owner_code`, una transferencia debita al owner, acredita al receptor e incrementa solo el nonce del owner; sin `owner_code`, acredita al receptor sin débito ni cambio de nonce. Una transferencia fallida conserva balances y nonces. Los tests de integración validan el estado devuelto y la API pública; los tests internos pueden comprobar handlers privados. El stack es privado y sus contenidos tras un error no forman parte del resultado contractual de la VM.
+
 ## Initial scope
 
 Version 1 will provide:
