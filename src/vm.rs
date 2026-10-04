@@ -2,12 +2,9 @@ use crate::{instruction, state};
 
 pub enum VMError {
     ProgramNotProvided,
-    StackOverflow,
-    InstructionUnknown,
     InstructionOutOfBound,
     StackMissingExpectedValue,
     StackInvalidExpectedValueKind,
-    ArithmeticInvalitOperation,
     ArithmeticValueOverflow,
     StateMissingReference,
     StateTransferNotEnoughBalance,
