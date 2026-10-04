@@ -1,8 +1,5 @@
 # Systems Development Roadmap
 
-> [ !NOTE ]
-> El producto es un motor determinista de ejecución y transición de estado; el intérprete es su núcleo educativo y operativo.
-
 ## Purpose
 
 This repository is a technical learning space, not an interview-preparation checklist and not an attempt to become a blockchain or Rust specialist quickly.
@@ -18,49 +15,46 @@ The goal is to extend an existing backend foundation toward systems-oriented rea
 
 Rust is the implementation language for the main project because it makes memory and concurrency decisions explicit. The concepts should remain transferable to Go, which is already the stronger language for implementation and future pair-coding work.
 
-## Project: Deterministic State Machine
+## Project: Deterministic State-Transition Library
 
-Build a small bytecode interpreter that executes transactions against an in-memory key-value state.
+Build a small bytecode interpreter that executes validated programs against an in-memory account state.
 
 It is deliberately **not** a blockchain, database, programming language, or zero-knowledge system. It is a compact system through which to study how an execution engine works.
 
 ```text
-transaction + input state
+program + input state
            |
            v
-     validation + execution
+     program validation + execution
            |
            v
- result + output state + state digest
+       output state or error
 ```
 
 ## Context: what are we building?
 
-In friendly terms, this project is a small engine that executes instructions over a state in a predictable and safe way.
+In friendly terms, this project is a small Rust library that executes a validated finite program over in-memory state in a predictable way.
 
-It receives a transaction containing a small program, checks that the operation is valid, runs it, and either produces a new state or returns an error without leaving partial changes behind.
+It receives a program and an owned state, checks the program structure, runs it, and either returns a new state or an error without exposing a resulting state. The caller retains any original state copy it needs.
 
 ```text
 Initial state:
 Alice: 100
 Bob:    20
 
-Transaction:
-move 30 units from Alice to Bob
+Program and state:
+owner_code = Alice
+PUSH Amount(30)
+PUSH Code("Bob")
+TRANSFER
+HALT
 
 Final state:
 Alice:  70
 Bob:    50
 ```
 
-The operation can be represented as executable instructions rather than as one hard-coded `transfer()` call:
-
-```text
-LOAD Alice
-PUSH 30
-TRANSFER Bob
-HALT
-```
+The sender is the optional `owner_code` in the input state. Without one, `Transfer` can credit the receiver as a system-issued value; authorization to request that execution is external to this library.
 
 This is not meant to be a complete programming language. There is no user-facing syntax, parser, compiler, class system, garbage collector, peer-to-peer network, consensus protocol, or cryptographic proof system.
 
@@ -88,24 +82,21 @@ new state or explicit error
 
 ### Core parts
 
-| Part                 | Responsibility                                                                                      | Question it exposes                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| **State**            | Holds the data that may change: accounts, balances, and nonces.                                     | Where does mutable data live?                           |
-| **Transaction**      | Carries an intended operation and its instruction program.                                          | What is the unit of work?                               |
-| **Validation**       | Rejects malformed, stale, unauthorized, or impossible work before execution.                        | Which inputs are valid?                                 |
-| **Instruction set**  | Defines the small, fixed vocabulary of operations the engine understands.                           | What can the machine do?                                |
-| **VM/interpreter**   | Runs the fetch/decode/execute loop with a program counter and operand stack.                        | How do instructions change execution-local state?       |
-| **Executor**         | Establishes the atomic boundary: commits successful work or keeps the original state after failure. | When do changes become visible?                         |
-| **Receipt**          | Describes the observable result: success/failure, error, and resource use.                          | What happened during execution?                         |
-| **Canonical digest** | Hashes a stable representation of output state.                                                     | Can another execution compare or reproduce this result? |
+| Part                | Responsibility                                                        | Question it exposes                                |
+| ------------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
+| **State**           | Holds accounts, balances, nonces, and optional `owner_code`.          | Where does mutable data live?                      |
+| **Program**         | A finite instruction sequence validated to end with one `Halt`.       | Which instruction sequences may execute?           |
+| **Instruction set** | Defines the small, fixed vocabulary understood by the VM.             | What operations can the machine perform?           |
+| **VM/interpreter**  | Runs the fetch/execute loop and returns `Result<State, VMError>`.     | How do instructions change execution-local state?  |
+| **Tests**           | Check transitions, errors, and repeatability through the library API. | Does equal input produce equal observable results? |
 
-The **VM/interpreter is an internal execution mechanism**, not the whole product. The actual project is a deterministic state-transition engine: it validates work, executes it under explicit rules, and commits a valid new state.
+The VM is the engine and library API in this version. There is no separate server, transaction executor, receipt pipeline, persistence layer, or digest subsystem.
 
 ### Project purpose
 
 The purpose is not to build a token-transfer demo or claim to have built a blockchain. It is to have a small enough system to reason precisely about:
 
-- who owns state and who may mutate it;
+- who owns state and which runtime operations may mutate it;
 - how an operation fails without corrupting state;
 - what must be deterministic and which implementation details can break determinism;
 - what is copied, borrowed, allocated, or later shared;
@@ -120,10 +111,10 @@ It is a good successor to Redix:
 | networking and a custom wire protocol | instruction execution and VM state              |
 | concurrent connections                | controlled shared-state/concurrency experiments |
 | in-memory data structures             | deterministic state transitions                 |
-| AOF/RDB persistence                   | canonical state representation and hashing      |
+| AOF/RDB persistence                   | in-memory state transitions                     |
 | Go systems implementation             | Rust ownership and error modeling               |
 
-The project is small enough to finish, but produces tangible artifacts for a portfolio: a testable engine, benchmarks, an architecture document, and short notes explaining technical trade-offs.
+The project is small enough to finish, but produces tangible artifacts for a portfolio: a tested library, a clear contract, and notes explaining its technical trade-offs.
 
 ## Explicit non-goals
 
@@ -142,62 +133,51 @@ Each can be a separate future experiment only after the single-threaded engine i
 
 Version 1 is complete when it can:
 
-1. Execute a compact, fixed instruction set using a program counter and stack.
-2. Read and update a finite in-memory account/key-value state.
-3. Validate a transaction before execution.
-4. Return an explicit result or execution error without partially applying invalid transactions.
-5. Produce the same output state and digest from the same input state and transaction.
-6. Prove the above with unit and property-style determinism tests.
-7. Document state ownership, invariants, known costs, and non-goals.
+1. Execute a compact, fixed instruction set using a program counter and private stack.
+2. Read and update a finite in-memory account state.
+3. Validate program structure before execution: non-empty, exactly one final `Halt`.
+4. Return `Result<State, VMError>`; on failure return no resulting state, while any caller-retained input copy remains unchanged.
+5. Apply checked arithmetic and the defined transfer contracts: owner transfers debit the owner and increment its nonce; ownerless transfers may credit as system execution.
+6. Produce the same observable balances and nonces for equal program and input-state contents across fresh VM instances.
+7. Cover these contracts with unit and integration tests and document ownership, invariants, costs, and non-goals.
 
-That is already a complete, meaningful portfolio project. Merkle trees and parallel scheduling are version-2 work, not requirements for completion.
+Authorization policy, transaction-level nonce/replay validation, a separate receipt type, state digest/canonical serialization, persistence, and transport are outside version 1.
 
 ## Minimal model
 
 ### State
 
-Start with an ordered map of account IDs to integer balances. Ordering is intentional: it forces a deterministic traversal and serialization story.
+Use an in-memory map of account codes to balances and nonces. The VM reads accounts by key and does not expose map iteration or a serialized state format.
 
 ```text
-State = { AccountId -> Balance }
+State = { AccountCode -> (Balance, Nonce) }, optional owner_code
 ```
 
-### Transaction
+### Execution input
 
-Start with a transaction that contains a sender, a sequence/nonce, and bytecode. The nonce gives a concrete validation invariant without needing signatures.
+The library executes a validated program against an owned state. It does not model a transaction envelope or validate a transaction nonce in this version.
 
 ```text
-Transaction = {
-  sender,
-  nonce,
+Execution = {
+  state,
   program
 }
 ```
 
 ### Instruction set
 
-Keep it intentionally narrow. A useful first set:
-
-```text
-Push(i64)       push a constant onto the stack
-Add              pop two values and push their sum
-Sub              pop two values and push their difference
-Load(AccountId)  push an account balance
-Store(AccountId) pop a value and update an account balance
-Transfer(To)     move a stack-supplied amount from sender to recipient
-Halt             successfully stop execution
-```
+The current set is `Push(Amount|Code)`, `Add`, `Sub`, `Mul`, `MulPercentage`, `Load`, `Transfer`, and `Halt`.
 
 Every instruction should have specified stack effects and failure cases (underflow, overflow, insufficient balance, invalid program counter). Keep arithmetic policy explicit; checked arithmetic is a sensible default.
 
 ### Important invariants
 
-- Execution either commits the whole transaction or returns an error with the original state intact.
+- A successful run returns the resulting state; a failed run returns only an error, not a partial resulting state.
 - Balances never become negative.
-- A transaction nonce is accepted only once for a sender.
-- Program execution is bounded by an instruction/gas limit.
-- State serialization has a canonical order.
-- Equal input state plus equal transaction produces equal result, state and digest.
+- A successful owner transfer debits the owner, credits the receiver, and increments the owner's account nonce.
+- A transfer without `owner_code` may credit the receiver; the VM does not enforce authorization.
+- Every valid program is finite and ends in `Halt`; there is no configurable instruction/gas or stack limit.
+- Equal program and input-state contents produce equal observable balances and nonces; no canonical encoding or digest is required.
 
 ## Delivery sequence
 
@@ -213,65 +193,52 @@ Write short, disposable experiments before beginning the engine:
 
 The outcome is not a collection of exercises. It is a concise note for each experiment: what was owned, borrowed, copied, allocated, and rejected by the compiler.
 
-### Milestone 1 — Stack VM
+### Milestone 1 — Program and stack VM
 
-- Define `Instruction`, `Program`, `Vm` and `VmError`.
-- Implement fetch, decode and execute around a program counter and `Vec<i64>` stack.
-- Add table-driven tests for each instruction and malformed program.
-- Add a configurable instruction limit.
+- Define `Instruction`, validated `Program`, `VM`, and `VMError`.
+- Implement fetch/execute around a program counter and private operand stack.
+- Test instruction effects, stack errors, checked arithmetic, loads, and transfers.
+- Keep programs finite with a final `Halt`; a configurable execution budget is out of scope.
 
 **Question to answer:** What data belongs to the program, the VM, and an individual execution?
 
-### Milestone 2 — Transactional state transition
+### Milestone 2 — State-transition contract
 
-- Define state, account and transaction types.
-- Validate nonce and balance constraints.
-- Execute a transaction against a working state and commit only on success.
-- Return an `ExecutionReceipt` containing status, instruction count and state digest.
+- Define state and account types, including the optional owner context.
+- Enforce balance, account-nonce increment, and arithmetic constraints during execution.
+- Return the new state on success and no state value on error.
+- Keep authorization, transaction replay checks, persistence, transport, and receipt types outside this version.
 
 **Question to answer:** Where is the atomicity boundary, and what is copied or mutated to preserve it?
 
-### Milestone 3 — Determinism and observability
+### Milestone 3 — Deterministic behavior
 
-- Define canonical state serialization.
-- Hash the canonical bytes with a standard, documented hash crate.
-- Test repeatability across fresh engine instances and different insertion orders.
-- Add basic benchmarks: instruction loop, state read/write, and transaction execution.
-- Record allocations only if a profiler/allocator measurement reveals something worth discussing.
+- Test repeatability across fresh VM instances with equal program and state contents.
+- Compare observable balances and nonces; canonical serialization and a digest are not required.
+- Add benchmarks only if a concrete performance question becomes part of the project scope.
 
 **Question to answer:** Which implementation details can make apparently identical execution produce different results?
 
-### Milestone 4 — Optional, bounded extensions
+### After version 1
 
-Choose at most one after version 1 is done:
-
-1. **Conflict-aware batch executor:** declare read/write account sets, execute non-conflicting transactions in parallel, then commit in a deterministic order.
-2. **Merkle-style commitment:** replace the flat digest with a simple sorted binary Merkle tree.
-3. **Persistence format:** append valid transactions and deterministically rebuild state.
-
-The recommended extension is the conflict-aware batch executor because it directly exposes the concurrency questions relevant to both Rust and Go.
+Do not add extensions as part of closing this project. Batch execution, state commitments, and persistence would each require a separate scope and contract.
 
 ## Suggested repository shape
 
 ```text
 deterministic-executor/
-├── README.md                 # problem, scope, architecture and quick start
-├── docs/
-│   ├── architecture.md       # ownership/state diagram and execution flow
-│   ├── invariants.md         # rules enforced by code and tests
-│   ├── determinism.md        # canonicalization and known hazards
-│   └── decisions/            # short ADRs for consequential choices
+├── README.md
+├── doc/PLAN.md
 ├── src/
+│   ├── lib.rs
 │   ├── instruction.rs
-│   ├── vm.rs
 │   ├── state.rs
-│   ├── transaction.rs
-│   └── executor.rs
+│   └── vm.rs
 ├── tests/
+│   ├── instruction.rs
 │   ├── vm.rs
 │   ├── execution.rs
 │   └── determinism.rs
-└── benches/
 ```
 
 Start as one Rust crate. Do not split it into workspace crates until a real boundary requires it.
@@ -317,7 +284,7 @@ For every milestone, answer these questions in the README or a short note:
 
 Describe the project honestly as:
 
-> A small deterministic execution engine in Rust built to study bytecode interpretation, transactional state transitions, canonical state representation, and concurrency trade-offs.
+> A small Rust library for deterministic bytecode execution over in-memory state, built to study ownership, checked state transitions, and execution failure semantics.
 
 Avoid presenting it as a blockchain, production VM, or cryptographic verifier. The portfolio value is the quality of the scope, tests, documentation and trade-off reasoning—not the size of the codebase.
 

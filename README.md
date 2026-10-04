@@ -1,8 +1,8 @@
 # Deterministic Executor
 
-A small deterministic execution engine written in Rust.
+A small deterministic execution engine provided as a Rust library.
 
-It executes a fixed instruction set against in-memory state and applies each transaction atomically: valid changes are committed together, while a failed execution leaves the original state unchanged.
+It executes a structurally validated, finite program against in-memory state. A successful run returns the resulting state; a failed run returns an error and no resulting state. The caller owns any original copy it needs to retain.
 
 ## Purpose
 
@@ -10,8 +10,8 @@ This is a systems-development learning project. Its focus is on:
 
 - bytecode interpretation and stack-based execution;
 - ownership of mutable state and controlled mutation;
-- validation, failures, and atomic state transitions;
-- deterministic results and canonical state representation;
+- program validation, failure semantics, and non-partial results;
+- deterministic execution results and explicit state-transition semantics;
 - Rust ownership, error modeling, testing, and later concurrency trade-offs.
 
 The system is deliberately small so that its behavior, invariants, and costs can be understood precisely.
@@ -28,29 +28,26 @@ Estas responsabilidades se reflejan en las pruebas: con `owner_code`, una transf
 
 ## Initial scope
 
-Version 1 will provide:
+Version 1 provides:
 
-- a compact, fixed instruction set;
-- an in-memory account/key-value state with balances and nonces;
-- transaction validation before execution;
-- a bounded stack VM with explicit execution errors;
-- atomic commit or rollback of state transitions;
-- execution receipts and a deterministic state digest;
-- tests for VM behavior, atomicity, and determinism.
+- a compact instruction set and validated programs that end with `Halt`;
+- an in-memory account state with balances and nonces;
+- a stack VM with checked arithmetic, account loading, transfers, and explicit errors;
+- a `Result<State, VMError>` execution contract;
+- unit and integration tests for instruction behavior, state transitions, errors, and repeatability.
 
 ## Non-goals
 
-The initial version is not a blockchain, wallet, database, network service, full programming language, consensus system, or parallel executor. It has no HTTP API, persistence, signatures, peer-to-peer networking, or token.
+The initial version is not a server, blockchain, wallet, database, full programming language, consensus system, or parallel executor. It has no TCP/HTTP transport, parser, persistence, authorization policy, transaction-level nonce/replay validation, execution receipt type, state digest, or configurable instruction/gas limit.
 
-Those are separate experiments to consider only after the single-threaded engine is complete and understood.
+Authorization is an external responsibility. When `owner_code` is absent, the VM permits a system-issued credit; it does not decide whether the caller is authorized to request one. Other excluded capabilities can be separate experiments after the library contract is complete and understood.
 
 ## Milestones
 
-1. **Rust orientation** — ownership, borrowing, errors, collections, and small concurrency experiments.
-2. **Stack VM** — instructions, program counter, operand stack, execution errors, and instruction limits.
-3. **Transactional execution** — state, transactions, validation, atomic commit/rollback, and receipts.
-4. **Determinism** — canonical serialization, state digest, repeatability tests, and basic benchmarks.
-5. **Optional extension** — one bounded experiment: conflict-aware batch execution, a Merkle-style commitment, or persistence.
+1. **Rust orientation** — ownership, borrowing, errors, and collections.
+2. **Program and VM** — validated instructions, stack execution, state transitions, and explicit errors.
+3. **Execution contract** — successful state results, error behavior, and deterministic repeatability tests.
+4. **Optional extension** — a separate experiment only after the library contract is complete.
 
 ## Structure
 
@@ -62,8 +59,7 @@ src/
 ├── main.rs         # minimal executable entry point
 ├── instruction.rs  # instruction-set definitions
 ├── vm.rs           # stack VM and execution loop
-├── state.rs        # account/state model
-└── executor.rs     # validation and atomic state transitions
+└── state.rs        # account/state model
 ```
 
 See [`doc/PLAN.md`](doc/PLAN.md) for the operational roadmap, invariants, and learning resources.
