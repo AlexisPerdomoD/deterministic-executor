@@ -27,6 +27,20 @@ pub enum ProgramError {
     HaltNotLast,
 }
 
+impl std::fmt::Display for ProgramError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::Empty => "program cannot be empty",
+            Self::MissingHalt => "program must contain a Halt instruction",
+            Self::MultipleHalt => "program must contain exactly one Halt instruction",
+            Self::HaltNotLast => "Halt must be the final instruction",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for ProgramError {}
+
 /// A program is a sequence of instructions.
 pub struct Program {
     instructions: Vec<Instruction>,

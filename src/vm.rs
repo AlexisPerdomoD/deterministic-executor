@@ -1,5 +1,6 @@
 use crate::{instruction, state};
 
+#[derive(Debug)]
 pub enum VMError {
     ProgramNotProvided,
     InstructionOutOfBound,
@@ -12,6 +13,26 @@ pub enum VMError {
     StateTransferInvalidReceiver,
     StateAccountNonceOverflow,
 }
+
+impl std::fmt::Display for VMError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::ProgramNotProvided => "a program must be provided before building the VM",
+            Self::InstructionOutOfBound => "program counter is outside the program",
+            Self::StackMissingExpectedValue => "stack is missing an expected value",
+            Self::StackInvalidExpectedValueKind => "stack value has an unexpected kind",
+            Self::ArithmeticValueOverflow => "checked arithmetic exceeded the supported range",
+            Self::StateMissingReference => "referenced account does not exist",
+            Self::StateTransferNotEnoughBalance => "sender has insufficient balance",
+            Self::StateTransferBalanceOverflow => "receiver balance overflowed",
+            Self::StateTransferInvalidReceiver => "sender cannot be the transfer receiver",
+            Self::StateAccountNonceOverflow => "account nonce overflowed",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for VMError {}
 
 enum VMArithmeticOperation {
     Add,

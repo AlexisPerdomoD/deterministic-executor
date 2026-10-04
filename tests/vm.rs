@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use deterministic_executor::{
-    instruction::{Instruction, Program, Value},
+    instruction::{Instruction, Program, ProgramError, Value},
     state::{Account, State},
     vm::{VM, VMError},
 };
@@ -152,4 +152,39 @@ fn execution_returns_arithmetic_errors_through_the_public_api() {
     );
 
     assert!(matches!(result, Err(VMError::ArithmeticValueOverflow)));
+}
+
+#[test]
+fn public_errors_support_standard_rust_error_handling() {
+    fn assert_error<T: std::error::Error>() {}
+
+    assert_error::<ProgramError>();
+    assert_error::<VMError>();
+    assert!(!ProgramError::Empty.to_string().is_empty());
+    assert!(!VMError::ProgramNotProvided.to_string().is_empty());
+    assert!(!format!("{:?}", VMError::ProgramNotProvided).is_empty());
+}
+
+#[test]
+fn external_client_example_can_propagate_errors_with_question_mark()
+-> Result<(), Box<dyn std::error::Error>> {
+    let accounts = HashMap::from([
+        ("alice".to_owned(), Account { bal: 100, nonce: 0 }),
+        ("bob".to_owned(), Account { bal: 20, nonce: 0 }),
+    ]);
+    let state = State::builder()
+        .owner_code("alice".to_owned())
+        .accounts(accounts)
+        .build();
+    let program = Program::with_instructions(vec![
+        Instruction::Push(Value::Amount(30)),
+        Instruction::Push(Value::Code("bob".to_owned())),
+        Instruction::Transfer,
+        Instruction::Halt,
+    ])?;
+
+    let result = VM::builder().program(program).state(state).build()?.run()?;
+
+    assert_eq!(result.account("bob").unwrap().bal, 50);
+    Ok(())
 }
