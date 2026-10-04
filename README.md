@@ -16,15 +16,15 @@ This is a systems-development learning project. Its focus is on:
 
 The system is deliberately small so that its behavior, invariants, and costs can be understood precisely.
 
-## Límite de responsabilidad de la VM
+## VM responsibility boundary
 
-La VM ejecuta un programa validado sobre un estado recibido y, si termina correctamente, devuelve el estado resultante. Su responsabilidad es aplicar las transiciones de las instrucciones de forma determinista y mantener sus invariantes locales: límites aritméticos, referencias requeridas y actualización consistente de balances y nonce.
+The VM executes a validated program against an input state and returns the resulting state on success. Its responsibility is to apply instruction-defined transitions deterministically and enforce their local invariants: checked arithmetic, required account references, and consistent balance/nonce updates.
 
-La VM no decide si una operación está autorizada por una política externa. Si no hay `owner_code`, la ejecución puede acreditar valor al receptor como emisión de sistema; la VM no exige ni inventa una cuenta emisora. La legitimidad de esa emisión corresponde al componente que solicita la ejecución.
+The VM does not decide whether an operation is authorized by an external policy. If `owner_code` is absent, execution may credit the receiver as a system-issued value; the VM neither requires nor invents a sender account. The component requesting execution is responsible for deciding whether that request is authorized.
 
-La autorización, la persistencia del estado y la capa de transporte quedan fuera del motor. No deben atribuirse implícitamente al intérprete ni confundirse con la validez semántica de una transición.
+Authorization, state persistence, and transport are outside the engine. They must not be implicitly attributed to the interpreter or confused with the semantic validity of a state transition.
 
-Estas responsabilidades se reflejan en las pruebas: con `owner_code`, una transferencia debita al owner, acredita al receptor e incrementa solo el nonce del owner; sin `owner_code`, acredita al receptor sin débito ni cambio de nonce. Una transferencia fallida conserva balances y nonces. Los tests de integración validan el estado devuelto y la API pública; los tests internos pueden comprobar handlers privados. El stack es privado y sus contenidos tras un error no forman parte del resultado contractual de la VM.
+These boundaries are reflected in the tests: with `owner_code`, a transfer debits the owner, credits the receiver, and increments only the owner's nonce; without it, a transfer credits the receiver without a sender debit or nonce change. A failed transfer leaves account balances and nonces unchanged. Integration tests exercise the public API and returned state; internal tests may inspect private handlers. The stack is private, and its contents after an error are not part of the VM's result contract.
 
 ## Initial scope
 
@@ -38,28 +38,76 @@ Version 1 provides:
 
 ## Non-goals
 
-The initial version is not a server, blockchain, wallet, database, full programming language, consensus system, or parallel executor. It has no TCP/HTTP transport, parser, persistence, authorization policy, transaction-level nonce/replay validation, execution receipt type, state digest, or configurable instruction/gas limit.
+The initial version is not a server, blockchain, wallet, database, full programming language, consensus system, or parallel executor. It has no TCP/HTTP transport, parser, persistence, authorization policy, transaction-level nonce/replay validation, separate execution receipt, state digest, or configurable instruction/gas limit.
 
 Authorization is an external responsibility. When `owner_code` is absent, the VM permits a system-issued credit; it does not decide whether the caller is authorized to request one. Other excluded capabilities can be separate experiments after the library contract is complete and understood.
 
-## Milestones
+## Public API
 
-1. **Rust orientation** — ownership, borrowing, errors, and collections.
-2. **Program and VM** — validated instructions, stack execution, state transitions, and explicit errors.
-3. **Execution contract** — successful state results, error behavior, and deterministic repeatability tests.
-4. **Optional extension** — a separate experiment only after the library contract is complete.
+| Module        | Main public types                                 | Purpose                                                            |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------ |
+| `instruction` | `Value`, `Instruction`, `Program`, `ProgramError` | Define instructions and construct structurally validated programs. |
+| `state`       | `Account`, `State`, `StateBuilder`                | Create an input state and inspect account balances/nonces.         |
+| `vm`          | `VM`, `VMBuilder`, `VMError`                      | Build and run a VM, returning `Result<State, VMError>`.            |
 
-## Structure
+## Example: execute from another crate
 
-The project starts as one Rust crate. Its core is organized around execution responsibilities rather than application-backend layers:
+The crate is consumed as `deterministic_executor` in Rust code. This example builds a state and program, executes a transfer, and reads the returned state:
+
+```rust
+use std::{collections::HashMap, error::Error};
+
+use deterministic_executor::{
+    instruction::{Instruction, Program, Value},
+    state::{Account, State},
+    vm::VM,
+};
+
+fn transfer() -> Result<u128, Box<dyn Error>> {
+    let accounts = HashMap::from([
+        ("alice".to_owned(), Account { bal: 100, nonce: 0 }),
+        ("bob".to_owned(), Account { bal: 20, nonce: 0 }),
+    ]);
+    let state = State::builder()
+        .owner_code("alice".to_owned())
+        .accounts(accounts)
+        .build();
+    let program = Program::with_instructions(vec![
+        Instruction::Push(Value::Amount(30)),
+        Instruction::Push(Value::Code("bob".to_owned())),
+        Instruction::Transfer,
+        Instruction::Halt,
+    ])?;
+
+    let result = VM::builder().program(program).state(state).build()?.run()?;
+    Ok(result.account("bob").expect("bob was created above").bal)
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    assert_eq!(transfer()?, 50);
+    Ok(())
+}
+```
+
+## Build and verify
+
+```sh
+cargo test
+cargo fmt --check
+cargo clippy -- -D warnings
+```
+
+## Repository structure
 
 ```text
 src/
-├── lib.rs          # library entry point
-├── main.rs         # minimal executable entry point
-├── instruction.rs  # instruction-set definitions
-├── vm.rs           # stack VM and execution loop
-└── state.rs        # account/state model
+├── lib.rs
+├── instruction.rs
+├── state.rs
+└── vm.rs
+tests/
+├── instruction.rs
+├── vm.rs
+├── execution.rs
+└── determinism.rs
 ```
-
-See [`doc/PLAN.md`](doc/PLAN.md) for the operational roadmap, invariants, and learning resources.
