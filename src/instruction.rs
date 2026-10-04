@@ -25,7 +25,6 @@ pub enum ProgramError {
     MissingHalt,
     MultipleHalt,
     HaltNotLast,
-    InstructionOutOfBound,
 }
 
 /// A program is a sequence of instructions.
